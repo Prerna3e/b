@@ -1,4 +1,721 @@
-//mongoose
+MULTER
+................................................................................................................................................................
+Single File Upload (Image Upload)
+// server.js
+const express = require("express");
+const multer = require("multer");
+const path = require("path");
+
+const app = express();
+
+// Storage config
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, "uploads/");
+  },
+  filename: (req, file, cb) => {
+    cb(null, Date.now() + path.extname(file.originalname));
+  }
+});
+
+// File filter
+const fileFilter = (req, file, cb) => {
+  const allowed = /jpg|jpeg|png/;
+  const ext = path.extname(file.originalname).toLowerCase();
+  if (allowed.test(ext)) cb(null, true);
+  else cb(new Error("Only .jpg and .png files are allowed"));
+};
+
+const upload = multer({ storage, fileFilter });
+
+// Upload route
+app.post("/upload", upload.single("profile"), (req, res) => {
+  res.json({
+    message: "File uploaded successfully",
+    filename: req.file.filename,
+    path: req.file.path
+  });
+});
+
+// Error handler
+app.use((err, req, res, next) => {
+  res.status(400).json({ error: err.message });
+});
+
+app.listen(3000);
+..................................................................................................................................................................
+Multiple file upload
+// server.js
+const express = require("express");
+const multer = require("multer");
+const path = require("path");
+
+const app = express();
+
+// Storage config
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, "uploads/gallery");
+  },
+  filename: (req, file, cb) => {
+    cb(null, Date.now() + "-" + file.originalname);
+  }
+});
+
+// File filter
+const fileFilter = (req, file, cb) => {
+  const allowed = /jpg|jpeg|png/;
+  const ext = path.extname(file.originalname).toLowerCase();
+  if (allowed.test(ext)) cb(null, true);
+  else cb(new Error("Only jpg, jpeg, png files allowed"));
+};
+
+// Multer config (max 5 files)
+const upload = multer({
+  storage,
+  fileFilter,
+  limits: { files: 5 }
+});
+
+// Upload route
+app.post("/upload-multiple", upload.array("images", 5), (req, res) => {
+  const files = req.files.map(f => f.filename);
+  res.json({
+    message: "Files uploaded successfully",
+    files
+  });
+});
+
+// Error handler
+app.use((err, req, res, next) => {
+  res.status(400).json({ error: err.message });
+});
+
+app.listen(3000);
+.................................................................................................................................................................
+File Upload with Form Data
+// server.js
+const express = require("express");
+const multer = require("multer");
+const path = require("path");
+const fs = require("fs");
+
+const app = express();
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Storage
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, "uploads/resumes");
+  },
+  filename: (req, file, cb) => {
+    cb(null, Date.now() + path.extname(file.originalname));
+  }
+});
+
+// File filter (PDF only)
+const fileFilter = (req, file, cb) => {
+  if (path.extname(file.originalname).toLowerCase() === ".pdf")
+    cb(null, true);
+  else cb(new Error("Only PDF files allowed"));
+};
+
+const upload = multer({ storage, fileFilter });
+
+// Upload route
+app.post("/submit", upload.single("resume"), (req, res) => {
+  const { name, email, phone } = req.body;
+
+  const data = {
+    name,
+    email,
+    phone,
+    resumePath: req.file.path
+  };
+
+  let records = [];
+  if (fs.existsSync("data.json")) {
+    records = JSON.parse(fs.readFileSync("data.json"));
+  }
+
+  records.push(data);
+  fs.writeFileSync("data.json", JSON.stringify(records, null, 2));
+
+  res.json({
+    message: "Form submitted successfully",
+    data
+  });
+});
+
+// Error handler
+app.use((err, req, res, next) => {
+  res.status(400).json({ error: err.message });
+});
+
+app.listen(3000);
+.................................................................................................................................................................
+File Size & Type Validation
+// server.js
+const express = require("express");
+const multer = require("multer");
+const path = require("path");
+
+const app = express();
+
+// Storage configuration
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, "uploads/products");
+  },
+  filename: (req, file, cb) => {
+    cb(null, Date.now() + path.extname(file.originalname));
+  }
+});
+
+// File type validation
+const fileFilter = (req, file, cb) => {
+  const allowedTypes = /jpg|png/;
+  const ext = path.extname(file.originalname).toLowerCase();
+  if (allowedTypes.test(ext)) cb(null, true);
+  else cb(new Error("Only .jpg and .png files are allowed"));
+};
+
+// Multer config (2 MB limit)
+const upload = multer({
+  storage,
+  fileFilter,
+  limits: { fileSize: 2 * 1024 * 1024 }
+});
+
+// Upload route
+app.post("/upload-product", upload.single("product"), (req, res) => {
+  res.json({
+    message: "File uploaded successfully",
+    path: req.file.path,
+    size: req.file.size
+  });
+});
+
+// Error handler
+app.use((err, req, res, next) => {
+  res.status(400).json({ error: err.message });
+});
+
+app.listen(3000);
+.................................................................................................................................................................
+Multer - File Management API
+// server.js
+const express = require("express");
+const multer = require("multer");
+const path = require("path");
+const fs = require("fs");
+
+const app = express();
+app.use(express.json());
+
+// Serve static files
+app.use("/uploads", express.static("uploads"));
+
+// Ensure base folders exist
+["uploads/profile_pics", "uploads/documents", "uploads/others"].forEach(dir => {
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+});
+
+// Multer storage
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const userId = req.params.userId;
+    let folder = "others";
+
+    if (file.fieldname === "profilePic") folder = "profile_pics";
+    if (file.fieldname === "docs") folder = "documents";
+
+    const dest = path.join("uploads", folder, userId);
+    fs.mkdirSync(dest, { recursive: true });
+    cb(null, dest);
+  },
+  filename: (req, file, cb) => {
+    const userId = req.params.userId;
+    cb(
+      null,
+      `${file.fieldname}-${userId}-${Date.now()}-${file.originalname}`
+    );
+  }
+});
+
+// File filter
+const fileFilter = (req, file, cb) => {
+  const allowed = /jpg|png|pdf|docx/;
+  const ext = path.extname(file.originalname).toLowerCase();
+  if (allowed.test(ext)) cb(null, true);
+  else cb(new Error("Invalid file type"));
+};
+
+// Multer config
+const upload = multer({
+  storage,
+  fileFilter,
+  limits: { fileSize: 5 * 1024 * 1024 }
+});
+
+// Upload route
+app.post(
+  "/upload/:userId",
+  upload.fields([
+    { name: "profilePic", maxCount: 1 },
+    { name: "docs", maxCount: 5 },
+    { name: "others", maxCount: 5 }
+  ]),
+  (req, res) => {
+    const uploaded = {
+      profilePic: req.files.profilePic
+        ? req.files.profilePic[0].path
+        : null,
+      docs: req.files.docs ? req.files.docs.map(f => f.path) : [],
+      others: req.files.others ? req.files.others.map(f => f.path) : []
+    };
+
+    res.json({
+      message: "Files uploaded successfully!",
+      uploaded
+    });
+  }
+);
+
+// Get files by userId
+app.get("/files/:userId", (req, res) => {
+  const userId = req.params.userId;
+  const baseDirs = ["profile_pics", "documents", "others"];
+  let files = [];
+
+  baseDirs.forEach(dir => {
+    const folder = path.join("uploads", dir, userId);
+    if (fs.existsSync(folder)) {
+      fs.readdirSync(folder).forEach(f => {
+        files.push(path.join(folder, f));
+      });
+    }
+  });
+
+  res.json({ userId, files });
+});
+
+// Delete file
+app.delete("/delete/:userId/:filename", (req, res) => {
+  const { userId, filename } = req.params;
+  const baseDirs = ["profile_pics", "documents", "others"];
+  let found = false;
+
+  baseDirs.forEach(dir => {
+    const filePath = path.join("uploads", dir, userId, filename);
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+      found = true;
+    }
+  });
+
+  if (!found) return res.status(404).json({ message: "File not found" });
+
+  res.json({ message: "File deleted successfully!" });
+});
+
+// Multer error handler
+app.use((err, req, res, next) => {
+  if (err instanceof multer.MulterError || err.message)
+    return res.status(400).json({ error: err.message });
+  next();
+});
+
+app.listen(3000);
+.................................................................................................................................................................
+HTTP
+................................................................................................................................................................
+HTTP Module - Create a Basic API with POST and GET
+// server.js
+const http = require("http");
+const fs = require("fs");
+const path = require("path");
+
+const server = http.createServer((req, res) => {
+  if (req.url.startsWith("/public/")) {
+    const filePath = path.join(__dirname, req.url);
+
+    fs.readFile(filePath, (err, data) => {
+      if (err) {
+        res.writeHead(404, { "Content-Type": "text/plain" });
+        res.end("404 File Not Found");
+      } else {
+        const ext = path.extname(filePath);
+        let contentType = "text/plain";
+
+        if (ext === ".css") contentType = "text/css";
+        if (ext === ".js") contentType = "application/javascript";
+        if (ext === ".png") contentType = "image/png";
+        if (ext === ".jpg" || ext === ".jpeg") contentType = "image/jpeg";
+
+        res.writeHead(200, { "Content-Type": contentType });
+        res.end(data);
+      }
+    });
+  } else {
+    res.writeHead(404, { "Content-Type": "text/plain" });
+    res.end("404 Not Found");
+  }
+});
+
+server.listen(3000);
+
+project/
+│
+├── server.js
+└── public/
+    ├── style.css
+    ├── script.js
+    └── image.png
+..................................................................................................................................................................
+HTTP - Serve Files from a Public Directory 
+// server.js
+const http = require("http");
+const fs = require("fs");
+const path = require("path");
+
+const server = http.createServer((req, res) => {
+  if (req.url.startsWith("/public/")) {
+    const filePath = path.join(__dirname, req.url);
+
+    fs.readFile(filePath, (err, data) => {
+      if (err) {
+        res.writeHead(404, { "Content-Type": "text/plain" });
+        res.end("404 File Not Found");
+      } else {
+        const ext = path.extname(filePath);
+        let contentType = "text/plain";
+
+        if (ext === ".css") contentType = "text/css";
+        else if (ext === ".js") contentType = "application/javascript";
+        else if (ext === ".png") contentType = "image/png";
+        else if (ext === ".jpg" || ext === ".jpeg") contentType = "image/jpeg";
+
+        res.writeHead(200, { "Content-Type": contentType });
+        res.end(data);
+      }
+    });
+  } else {
+    res.writeHead(404, { "Content-Type": "text/plain" });
+    res.end("404 Not Found");
+  }
+});
+
+server.listen(3000);
+
+
+project/
+│
+├── server.js
+└── public/
+    ├── style.css
+    ├── script.js
+    └── image.png
+................................................................................................................................................................
+HTTP Module - GET and POST Handling
+// server.js
+const http = require("http");
+const querystring = require("querystring");
+
+const server = http.createServer((req, res) => {
+  if (req.method === "GET" && req.url === "/form") {
+    res.writeHead(200, { "Content-Type": "text/html" });
+    res.end(`
+      <form method="POST" action="/form">
+        <input type="text" name="name" placeholder="Name" required />
+        <input type="email" name="email" placeholder="Email" required />
+        <button type="submit">Submit</button>
+      </form>
+    `);
+  }
+
+  else if (req.method === "POST" && req.url === "/form") {
+    let body = "";
+
+    req.on("data", chunk => {
+      body += chunk;
+    });
+
+    req.on("end", () => {
+      const data = querystring.parse(body);
+      res.writeHead(200, { "Content-Type": "text/plain" });
+      res.end(`Thank you, ${data.name}. Your email is ${data.email}.`);
+    });
+  }
+
+  else {
+    res.writeHead(404, { "Content-Type": "text/plain" });
+    res.end("404 Not Found");
+  }
+});
+
+server.listen(3000);
+.................................................................................................................................................................
+HTTP Module - Query Parameter Handling 
+// server.js
+const http = require("http");
+const url = require("url");
+
+const server = http.createServer((req, res) => {
+  const parsedUrl = url.parse(req.url, true);
+
+  if (parsedUrl.pathname === "/greet") {
+    const name = parsedUrl.query.name || "Guest";
+    res.writeHead(200, { "Content-Type": "text/plain" });
+    res.end(`Hello, ${name}!`);
+  } else {
+    res.writeHead(404, { "Content-Type": "text/plain" });
+    res.end("404 Not Found");
+  }
+});
+
+server.listen(3000);
+................................................................................................................................................................
+HTTP Module - Redirect Based on Time 
+// server.js
+const http = require("http");
+
+const server = http.createServer((req, res) => {
+  if (req.url === "/time-check") {
+    const hour = new Date().getHours();
+
+    if (hour < 12) {
+      res.writeHead(302, { Location: "/morning" });
+      res.end();
+    } else {
+      res.writeHead(302, { Location: "/evening" });
+      res.end();
+    }
+  }
+
+  else if (req.url === "/morning") {
+    res.writeHead(200, { "Content-Type": "text/plain" });
+    res.end("Good Morning!");
+  }
+
+  else if (req.url === "/evening") {
+    res.writeHead(200, { "Content-Type": "text/plain" });
+    res.end("Good Evening!");
+  }
+
+  else {
+    res.writeHead(404, { "Content-Type": "text/plain" });
+    res.end("404 Not Found");
+  }
+});
+
+server.listen(3000);
+................................................................................................................................................................
+HTTP Module - Respond with Different Content Types
+// server.js
+const http = require("http");
+
+const server = http.createServer((req, res) => {
+  if (req.url === "/data.html") {
+    res.writeHead(200, { "Content-Type": "text/html" });
+    res.end("<h1>Hello from HTML</h1>");
+  }
+
+  else if (req.url === "/data.txt") {
+    res.writeHead(200, { "Content-Type": "text/plain" });
+    res.end("Hello from Text");
+  }
+
+  else if (req.url === "/data.json") {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ message: "Hello from JSON" }));
+  }
+
+  else {
+    res.writeHead(404, { "Content-Type": "text/plain" });
+    res.end("404 Not Found");
+  }
+});
+
+server.listen(3000);
+................................................................................................................................................................
+HTTP Server 
+
+// server-express.js (WITH EXPRESS)
+const express = require("express");
+const fs = require("fs");
+
+const app = express();
+const movies = JSON.parse(fs.readFileSync("movie.json"));
+
+app.get("/movies", (req, res) => {
+  const { genre, year } = req.query;
+
+  if (!genre || !year) {
+    return res.json({ message: "Both genre and year are required", data: [] });
+  }
+
+  const years = year.split(",").map(y => Number(y));
+
+  const result = movies.filter(
+    m =>
+      m.genre.toLowerCase() === genre.toLowerCase() &&
+      years.includes(m.year)
+  );
+
+  res.json(result);
+});
+
+app.listen(3000);
+json
+Copy code
+// movie.json
+[
+  { "title": "Fast Chase", "genre": "Action", "year": 2020, "rating": 7.5 },
+  { "title": "Mission Reloaded", "genre": "Action", "year": 2022, "rating": 8.1 },
+  { "title": "Love in Paris", "genre": "Romance", "year": 2020, "rating": 6.8 },
+  { "title": "Laugh Out Loud", "genre": "Comedy", "year": 2022, "rating": 7.2 },
+  { "title": "Silent Whisper", "genre": "Thriller", "year": 2021, "rating": 8.3 },
+  { "title": "Battlefield Glory", "genre": "Action", "year": 2021, "rating": 7.9 },
+  { "title": "Eternal Love", "genre": "Romance", "year": 2022, "rating": 7.0 }
+]
+................................................................................................................................................................
+EXPRESS
+................................................................................................................................................................
+Express - Modular User Routes
+// routes/users.js
+const express = require("express");
+const router = express.Router();
+
+const users = [
+  { id: 1, name: "Rahul", email: "rahul@gmail.com" },
+  { id: 2, name: "Priya", email: "priya@gmail.com" },
+  { id: 3, name: "Aman", email: "aman@gmail.com" }
+];
+
+router.get("/users", (req, res) => {
+  res.json(users);
+});
+
+router.get("/users/:id", (req, res) => {
+  const user = users.find(u => u.id === Number(req.params.id));
+  if (!user) return res.status(404).json({ message: "User not found" });
+  res.json(user);
+});
+
+module.exports = router;
+js
+Copy code
+// app.js
+const express = require("express");
+const userRoutes = require("./routes/users");
+
+const app = express();
+
+app.use("/api", userRoutes);
+
+app.listen(3000);
+................................................................................................................................................................
+Express - Multi-Module Blog 
+// routes/posts.js
+const express = require("express");
+const router = express.Router();
+
+const posts = [
+  { id: 1, title: "First Post", content: "Hello World" },
+  { id: 2, title: "Second Post", content: "Blog Content" }
+];
+
+router.get("/posts", (req, res) => {
+  res.json(posts);
+});
+
+router.get("/posts/:postId", (req, res) => {
+  const post = posts.find(p => p.id === Number(req.params.postId));
+  if (!post) return res.status(404).json({ message: "Post not found" });
+  res.json(post);
+});
+
+module.exports = router;
+js
+Copy code
+// routes/comments.js
+const express = require("express");
+const router = express.Router();
+
+const comments = [
+  { id: 1, postId: 1, text: "Nice post!" },
+  { id: 2, postId: 2, text: "Good read" }
+];
+
+router.get("/comments", (req, res) => {
+  res.json(comments);
+});
+
+router.get("/comments/:commentId", (req, res) => {
+  const comment = comments.find(c => c.id === Number(req.params.commentId));
+  if (!comment) return res.status(404).json({ message: "Comment not found" });
+  res.json(comment);
+});
+
+module.exports = router;
+js
+Copy code
+// app.js
+const express = require("express");
+const postsRoutes = require("./routes/posts");
+const commentsRoutes = require("./routes/comments");
+
+const app = express();
+
+app.use("/api", postsRoutes);
+app.use("/api", commentsRoutes);
+
+app.listen(3000);
+.................................................................................................................................................................
+Express -Product Routes with Dynamic Parameters
+// routes/products.js
+const express = require("express");
+const router = express.Router();
+
+const products = [
+  { id: 1, category: "electronics", name: "Mobile", price: 15000 },
+  { id: 2, category: "electronics", name: "Laptop", price: 60000 },
+  { id: 3, category: "clothing", name: "T-Shirt", price: 800 }
+];
+
+router.get("/products", (req, res) => {
+  res.json(products);
+});
+
+router.get("/products/:category/:id", (req, res) => {
+  const { category, id } = req.params;
+  const product = products.find(
+    p => p.category === category && p.id === Number(id)
+  );
+
+  if (!product)
+    return res.status(404).json({ message: "Product not found" });
+
+  res.json(product);
+});
+
+module.exports = router;
+js
+Copy code
+// app.js
+const express = require("express");
+const productRoutes = require("./routes/products");
+
+const app = express();
+
+app.use("/api", productRoutes);
+
+app.listen(3000);
+.................................................................................................................................................................
+MONGOOOSE
+...................................................................................................................................................................
 Mongoose - Employee Payroll System
 
 📁 models/Employee.js
@@ -136,6 +853,7 @@ app.listen(3000, () => {
   console.log("Server running on port 3000");
 });
 ................................................................................................................................................................
+mongoose - Event Management System
 // models/Event.js
 const mongoose = require("mongoose");
 
@@ -251,6 +969,8 @@ mongoose.connect("mongodb://127.0.0.1:27017/eventDB");
 app.use("/api", eventRoutes);
 
 app.listen(3000);
+..................................................................................................................................................................
+MONGODB
 ..................................................................................................................................................................
 MongoDb - Company Management System using MongoDB 
 // app.js
@@ -942,3 +1662,4 @@ Copy code
     "role": "admin"
   }
 ]
+..................................................................................................................................................................
