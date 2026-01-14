@@ -1,5 +1,227 @@
+login/signup
+...................................................................................................................................................................................................................
+const express = require("express");
+const fs = require("fs");
+const session = require("express-session");
+
+const app = express();
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Session config
+app.use(
+  session({
+    secret: "student-secret",
+    resave: false,
+    saveUninitialized: false
+  })
+);
+
+// Helper: read students
+const readStudents = () =>
+  JSON.parse(fs.readFileSync("students.json", "utf8"));
+
+// Helper: write students
+const writeStudents = data =>
+  fs.writeFileSync("students.json", JSON.stringify(data, null, 2));
+
+/* ---------------- SIGNUP ---------------- */
+app.post("/register", (req, res) => {
+  const { name, rollNumber, email, password } = req.body;
+  const students = readStudents();
+
+  const exists = students.find(
+    s => s.rollNumber === rollNumber || s.email === email
+  );
+  if (exists)
+    return res.status(400).send("Duplicate roll number or email");
+
+  students.push({ name, rollNumber, email, password });
+  writeStudents(students);
+
+  res.send("Registration successful");
+});
+
+/* ---------------- LOGIN ---------------- */
+app.post("/login", (req, res) => {
+  const { email, password } = req.body;
+  const students = readStudents();
+
+  const student = students.find(
+    s => s.email === email && s.password === password
+  );
+  if (!student) return res.status(401).send("Invalid credentials");
+
+  req.session.user = {
+    name: student.name,
+    rollNumber: student.rollNumber
+  };
+
+  res.redirect("/dashboard");
+});
+
+/* ---------------- DASHBOARD (PROTECTED) ---------------- */
+app.get("/dashboard", (req, res) => {
+  if (!req.session.user) return res.redirect("/login");
+
+  res.send(`
+    Welcome, ${req.session.user.name}<br>
+    Roll Number: ${req.session.user.rollNumber}
+  `);
+});
+
+/* ---------------- LOGOUT ---------------- */
+app.get("/logout", (req, res) => {
+  req.session.destroy(() => {
+    res.redirect("/login");
+  });
+});
+
+/* ---------------- LOGIN PAGE (dummy) ---------------- */
+app.get("/login", (req, res) => {
+  res.send("Please login first");
+});
+
+app.listen(3000, () =>
+  console.log("Server running on http://localhost:3000")
+);
+.................................................................................................................................................................................................................
+student management api
+..................................................................................................................................................................................................................
+// server.js
+const express = require("express");
+const mongoose = require("mongoose");
+
+const app = express();
+app.use(express.json());
+
+// MongoDB connection
+mongoose.connect("mongodb://127.0.0.1:27017/studentDB");
+
+// Schema
+const studentSchema = new mongoose.Schema({
+  studentId: { type: String, unique: true, required: true },
+  name: String,
+  email: { type: String, unique: true, required: true },
+  age: { type: Number, min: 18 },
+  isActive: { type: Boolean, default: true },
+  createdAt: { type: Date, default: Date.now }
+});
+
+const Student = mongoose.model("Student", studentSchema);
+
+// CREATE
+app.post("/students", async (req, res) => {
+  try {
+    if (req.body.age < 18) return res.status(400).send("Age must be 18+");
+    const student = await Student.create(req.body);
+    res.send(student);
+  } catch (e) {
+    res.status(400).send("Duplicate email or studentId");
+  }
+});
+
+// READ all active
+app.get("/students", async (req, res) => {
+  const students = await Student.find({ isActive: true });
+  res.send(students);
+});
+
+// READ by ID
+app.get("/students/:studentId", async (req, res) => {
+  const student = await Student.findOne({ studentId: req.params.studentId });
+  if (!student) return res.status(404).send("Student not found");
+  res.send(student);
+});
+
+// UPDATE (name, age only)
+app.put("/students/:studentId", async (req, res) => {
+  const { name, age } = req.body;
+  const student = await Student.findOneAndUpdate(
+    { studentId: req.params.studentId },
+    { name, age },
+    { new: true }
+  );
+  if (!student) return res.status(404).send("Student not found");
+  res.send(student);
+});
+
+// SOFT DELETE
+app.delete("/students/:studentId", async (req, res) => {
+  const student = await Student.findOneAndUpdate(
+    { studentId: req.params.studentId },
+    { isActive: false }
+  );
+  if (!student) return res.status(404).send("Student not found");
+  res.send("Student deactivated successfully");
+});
+
+app.listen(3000, () => console.log("Server running on port 3000"));
+.............................................................................................................................................................................................................
+employee.json
+................................................................................................................................................................................................................
+[
+  { "name": "Amit", "salary": 40000, "performance": "excellent" },
+  { "name": "Neha", "salary": 38000, "performance": "good" },
+  { "name": "Rahul", "salary": 45000, "performance": "excellent" }
+]
+server.js
+ employees.json
+const http = require("http");
+const fs = require("fs");
+
+const server = http.createServer((req, res) => {
+  if (req.url === "/" && req.method === "GET") {
+    fs.readFile("employees.json", "utf8", (err, data) => {
+      if (err) {
+        res.writeHead(500);
+        return res.end("File read error");
+      }
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(data);
+    });
+  }
+
+  else if (req.url === "/apply-bonus" && req.method === "GET") {
+    fs.readFile("employees.json", "utf8", (err, data) => {
+      if (err) {
+        res.writeHead(500);
+        return res.end("File read error");
+      }
+
+      let employees = JSON.parse(data);
+
+      employees = employees.map(emp => {
+        if (emp.performance === "excellent") {
+          emp.salary += 5000;
+        }
+        return emp;
+      });
+
+      fs.writeFile("employees.json", JSON.stringify(employees, null, 2), err => {
+        if (err) {
+          res.writeHead(500);
+          return res.end("File write error");
+        }
+        res.writeHead(200);
+        res.end("Bonus applied successfully!");
+      });
+    });
+  }
+
+  else {
+    res.writeHead(404);
+    res.end("404 - Page Not Found");
+  }
+});
+
+server.listen(3000, () => {
+  console.log("Server running on port 3000");
+});
+
+......................................................................................................................................................................................................
 MULTER
-................................................................................................................................................................
+.............................................................................................................................................................................................................
 Single File Upload (Image Upload)
 // server.js
 const express = require("express");
@@ -43,7 +265,7 @@ app.use((err, req, res, next) => {
 });
 
 app.listen(3000);
-..................................................................................................................................................................
+..............................................................................................................................................................................................................
 Multiple file upload
 // server.js
 const express = require("express");
@@ -92,7 +314,7 @@ app.use((err, req, res, next) => {
 });
 
 app.listen(3000);
-.................................................................................................................................................................
+................................................................................................................................................................................................................
 File Upload with Form Data
 // server.js
 const express = require("express");
